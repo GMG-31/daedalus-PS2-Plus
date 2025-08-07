@@ -440,6 +440,7 @@ bool IGraphicsContext::Initialise()
 {
 	gsGlobal = gsKit_init_global();
 	gsFontM = gsKit_init_fontm();
+	
 
 	/*if (g32bitColorMode)
 	{

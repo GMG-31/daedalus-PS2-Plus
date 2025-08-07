@@ -27,7 +27,7 @@
 #include "Core/RomSettings.h"
 #include "Core/Save.h"
 #include "Debug/DBGConsole.h"
-#include "Debug/DebugLog.h"
+#include "SysPS2/Debug/DebugLog.h"
 #include "Graphics/GraphicsContext.h"
 #include "HLEGraphics/TextureCache.h"
 #include "Input/InputManager.h"
@@ -48,6 +48,8 @@
 #include "Utility/Translate.h"
 #include "Utility/Timer.h"
 #include "Plugins/AudioPlugin.h"
+
+//extern "C" void RedrawDebugConsole();
 
 extern u8 iomanX_irx[];
 extern int size_iomanX_irx;
@@ -211,6 +213,7 @@ static void load_hddmodules()
 
 static bool	Initialize(int argc, char* argv[])
 {
+
 #ifdef USE_FILEXIO
 	SifInitRpc(0);
 
@@ -360,11 +363,11 @@ static bool	Initialize(int argc, char* argv[])
 
 	if (!System_Init())
 		return false;
-
 #ifdef DAEDALUS_DEBUG_CONSOLE	
 	Debug_SetLoggingEnabled(true);
+	Debug_InitLogging();
+	CSingleton<CDebugConsole>::Create(); 
 #endif
-
 	//gGlobalPreferences.DisplayFramerate = 1;
 
 	return true;
@@ -448,6 +451,9 @@ void HandleEndOfFrame()
 		//
 		CPreferences::Get()->Commit();
 	}
+//#ifdef DAEDALUS_DEBUG_CONSOLE
+		//RedrawDebugConsole();
+//		#endif
 }
 
 static void DisplayRomsAndChoose(bool show_splash)
@@ -518,7 +524,7 @@ int main(int argc, char* argv[])
 		for (;;)
 		{
 			DisplayRomsAndChoose(show_splash);
-			show_splash = false;
+			show_splash = true;
 
 			CRomDB::Get()->Commit();
 			CPreferences::Get()->Commit();
@@ -526,7 +532,6 @@ int main(int argc, char* argv[])
 			CPU_Run();
 			System_Close();
 		}
-
 		System_Finalize();
 	}
 #ifdef DEBUG

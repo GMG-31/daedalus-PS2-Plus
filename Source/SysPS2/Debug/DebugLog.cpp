@@ -18,10 +18,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "stdafx.h"
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "DebugLog.h"
-#include "Dump.h"
-#include "DBGConsole.h"
+#include "Debug/Dump.h"
+#include "Debug/DBGConsole.h"
 
 #include "Utility/IO.h"
 
@@ -44,15 +46,14 @@ bool Debug_InitLogging()
 
 	IO::Path::Append(log_filename, "daedalus.txt");
 
-#ifdef DAEDALUS_DEBUG_CONSOLE
-	if ( CDebugConsole::IsAvailable() )
-	{
-		CDebugConsole::Get()->Msg( 0, "Creating Dump file '%s'", log_filename );
-	}
-#endif
-	g_hOutputLog = fopen( log_filename, "w" );
-
-	return g_hOutputLog != NULL;
+	//g_hOutputLog = fopen((const char*)log_filename, "w");
+    FILE* g_hOutputLog = fopen("mass:/Dumps/daedalus.txt", "w");
+    if (!g_hOutputLog) {
+    CDebugConsole::Get()->Msg(0, "Fehler: konnte Log-Datei '%s' nicht öffnen!", log_filename);
+}
+	//CDebugConsole::Get()->Msg( 0, "fopen now", log_filename );
+    
+	return g_hOutputLog != nullptr;
 }
 
 //*****************************************************************************
@@ -81,11 +82,31 @@ void Debug_Print( const char * format, ... )
 		// Format the output
 		va_start(va, format);
 		// Don't use wvsprintf as it doesn't handle floats!
-		vsprintf(p, format, va);
-		va_end(va);
+		//vsprintf(p, format, va);
+		vsnprintf(p, sizeof(buffer), format, va);
+        va_end(va);
 
 		fprintf( g_hOutputLog, "%s\n", p );
+      //  fflush(g_hOutputLog); 
 	}
+}
+
+
+void Debug_Print_Str(const char* str)
+{
+    if (g_bLog && str != nullptr)
+    {
+        if (!g_hOutputLog)
+        {
+            Debug_InitLogging();
+        }
+
+        if (g_hOutputLog != nullptr)
+        {
+            fprintf(g_hOutputLog, "%s\n", str);
+			fflush(g_hOutputLog); 
+        }
+    }
 }
 
 //*****************************************************************************

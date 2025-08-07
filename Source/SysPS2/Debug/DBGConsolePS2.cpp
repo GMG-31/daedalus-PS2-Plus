@@ -1,181 +1,126 @@
-/*
-Copyright (C) 2006 StrmnNrmn
-
-This program is free software; you can redistribute it and/or
-modify it under the terms of the GNU General Public License
-as published by the Free Software Foundation; either version 2
-of the License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-
-*/
-
 #include "stdafx.h"
 #include "Debug/DBGConsole.h"
+#include "DebugLog.h"
 
 #ifdef DAEDALUS_DEBUG_CONSOLE
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <gsKit.h>
 
 #include "Debug/DebugConsoleImpl.h"
 #include "Test/BatchTest.h"
 
-static const char * const kTerminalSaveCursor			= "\033[s";
-static const char * const kTerminalRestoreCursor		= "\033[u";
-static const char * const kTerminalEraseLine			= "\033[2K";
+extern GSGLOBAL* gsGlobal;
+extern GSFONTM* gsFontM;  // global bereitgestellt von deinem System
+
+#define MAX_LINES 32
+#define MAX_LINE_LENGTH 128
 
 class IDebugConsole : public CDebugConsole
 {
 public:
-	virtual void		Msg(u32 type, const char * format, ...);
+    virtual void Msg(u32 type, const char* format, ...);
+    virtual void MsgOverwriteStart();
+    virtual void MsgOverwrite(u32 type, const char* format, ...);
+    virtual void MsgOverwriteEnd();
+    virtual void ForceRedraw() { RedrawConsole(); }
 
-	virtual void		MsgOverwriteStart();
-	virtual void		MsgOverwrite(u32 type, const char * format, ...);
-	virtual void		MsgOverwriteEnd();
 
 private:
-	void				ParseAndDisplayString( const char * p_string, ETerminalColour default_colour );
-
-	void				DisplayString( const char * p_string );
-	void				SetCurrentTerminalColour( ETerminalColour tc );
-
-
-	char				mFormattingBuffer[ 2048 ];
+    void RedrawConsole();
+    char mLines[MAX_LINES][MAX_LINE_LENGTH];
+    int mCurrentLine = 0;
 };
 
-template<> bool	CSingleton< CDebugConsole >::Create()
+template<> bool CSingleton<CDebugConsole>::Create()
 {
-	DAEDALUS_ASSERT_Q(mpInstance == NULL);
-
-	mpInstance = new IDebugConsole();
-
-	return true;
+    DAEDALUS_ASSERT_Q(mpInstance == NULL);
+    mpInstance = new IDebugConsole();
+    return true;
 }
 
-CDebugConsole::~CDebugConsole()
+CDebugConsole::~CDebugConsole() {}
+
+void IDebugConsole::RedrawConsole()
 {
+    if (!gsFontM || !gsGlobal)
+        return;
+
+    float consoleWidth = 320.0f;
+    float consoleHeight = 192.0f;
+    float consoleX = 640.0f - consoleWidth;
+    float consoleY = 0.0f;
+
+    // Hintergrund
+    gsKit_prim_sprite(
+        gsGlobal,
+        consoleX, consoleY,
+        consoleX + consoleWidth, consoleY + consoleHeight,
+        0,
+        GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x60, 0x00)
+    );
+
+    float y = consoleY + 8.0f;
+    for (int i = 0; i < MAX_LINES; ++i)
+    {
+        int idx = (mCurrentLine + 1 + i) % MAX_LINES;
+        if (mLines[idx][0] != '\0')
+        {
+gsKit_fontm_print_scaled(
+    gsGlobal,
+    gsFontM,
+    consoleX + 8.0f,
+    y,
+    1,
+    0.3f, // oder 0.4f für noch kleiner
+    GS_SETREG_RGBAQ(0xFF, 0xFF, 0xFF, 0x80, 0x00),
+    mLines[idx]
+);
+            y += 16.0f;
+            if (y > consoleY + consoleHeight - 16.0f)
+                break;
+        }
+    }
+
+    gsKit_queue_exec(gsGlobal);
+    gsKit_sync_flip(gsGlobal);
+    gsKit_vsync_wait();
 }
 
-void IDebugConsole::DisplayString( const char * p_string )
+void IDebugConsole::Msg(u32 type, const char* format, ...)
 {
-	printf( "%s", p_string );
+    va_list va;
+    va_start(va, format);
+    vsnprintf(mLines[mCurrentLine], MAX_LINE_LENGTH, format, va);
+    va_end(va);
+    
+    Debug_Print_Str(mLines[mCurrentLine]);
 
-#ifdef DAEDALUS_BATCH_TEST_ENABLED
-	CBatchTestEventHandler * handler( BatchTest_GetHandler() );
-	if( handler )
-		handler->OnDebugMessage( p_string );
-#endif
-
+    mCurrentLine = (mCurrentLine + 1) % MAX_LINES;
+    RedrawConsole();
 }
 
-void IDebugConsole::SetCurrentTerminalColour( ETerminalColour tc )
+void IDebugConsole::MsgOverwriteStart() {}
+void IDebugConsole::MsgOverwrite(u32 type, const char* format, ...)
 {
-	printf( GetTerminalColourString(tc) );
+    va_list va;
+    va_start(va, format);
+    vsnprintf(mLines[mCurrentLine], MAX_LINE_LENGTH, format, va);
+    va_end(va);
+
+    RedrawConsole();
 }
-
-void IDebugConsole::ParseAndDisplayString( const char * p_string, ETerminalColour default_colour )
-{
-	SetCurrentTerminalColour( default_colour );
-
-	char		current_string[ 1024 ];
-	u32			out_idx( 0 );
-	u32 string_len( strlen(p_string) );
-	for ( u32 in_idx = 0; in_idx < string_len; ++in_idx )
-	{
-		if (p_string[in_idx] == '[')
-		{
-			ETerminalColour tc = GetTerminalColour(p_string[in_idx+1]);
-			if(tc != TC_INVALID)
-			{
-				// Flush the current string and update the colour
-				current_string[out_idx] = 0;
-				DisplayString( current_string );
-				out_idx = 0;
-				SetCurrentTerminalColour( tc );
-			}
-			else
-			{
-				switch (p_string[in_idx+1])
-				{
-				case '[':
-				case ']':
-					current_string[out_idx] = p_string[in_idx+1];
-					out_idx++;
-					break;
-				}
-			}
-
-			// Skip colour character
-			in_idx++;
-		}
-		else if (p_string[in_idx] == ']')
-		{
-			// Flush the current string and update the colour
-			current_string[out_idx] = 0;
-			DisplayString( current_string );
-			out_idx = 0;
-			SetCurrentTerminalColour( default_colour );
-		}
-		else
-		{
-			current_string[out_idx] = p_string[in_idx];
-			out_idx++;
-		}
-	}
-
-	// Flush the current string and restore the colour
-	current_string[out_idx] = 0;
-	DisplayString( current_string );
-
-	SetCurrentTerminalColour( TC_DEFAULT );
-}
-
-void IDebugConsole::Msg(u32 type, const char * format, ...)
-{
-	va_list			va;
-
-	// Format the output
-	va_start( va, format );
-	// Don't use wvsprintf as it doesn't handle floats!
-	vsprintf( mFormattingBuffer, format, va );
-	va_end( va );
-
-	ParseAndDisplayString( mFormattingBuffer, TC_w );
-	DisplayString( "\n" );
-}
-
-void IDebugConsole::MsgOverwriteStart()
-{
-	printf( kTerminalSaveCursor );
-}
-
-void IDebugConsole::MsgOverwrite(u32 type, const char * format, ...)
-{
-	va_list			va;
-
-	// Format the output
-	va_start( va, format );
-	// Don't use wvsprintf as it doesn't handle floats!
-	vsprintf( mFormattingBuffer, format, va );
-	va_end( va );
-
-	printf( "%s%s", kTerminalEraseLine, kTerminalRestoreCursor );
-
-	ParseAndDisplayString( mFormattingBuffer, TC_w );
-}
-
-void IDebugConsole::MsgOverwriteEnd()
-{
-	printf( "\n" );		// Final newline for the terminal
-}
+void IDebugConsole::MsgOverwriteEnd() {}
 
 #endif // DAEDALUS_DEBUG_CONSOLE
+
+
+extern "C" void RedrawDebugConsole()
+{
+    CDebugConsole* console = CDebugConsole::Get();
+    if (console)
+        ((IDebugConsole*)console)->ForceRedraw();
+}
+

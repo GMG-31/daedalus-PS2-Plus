@@ -40,6 +40,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/ROMFile.h"
 
 #include "SysPS2/Utility/PathsPS2.h"
+#ifdef DEBUG
+	#include "SysPS2/Debug/DebugLog.h" 
+#endif
 
 #include "Math/MathUtil.h"
 
@@ -654,6 +657,10 @@ void	IRomSelectorComponent::Update( float elapsed_time, const v2 & stick, u32 ol
 #ifndef DAEDALUS_PSP_GPROF
 		if(new_buttons & PAD_L3)
 		{
+			//Added Debug finished to close the file!
+			#ifdef DEBUG
+        	Debug_FinishLogging();  // Ensures it always gets called
+			#endif
 			Exit(0);
 		}
 #endif
